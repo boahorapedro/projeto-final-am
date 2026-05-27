@@ -34,8 +34,8 @@ REGIME_THRESHOLDS = {"small": 1_000, "medium": 10_000}
 RECOMMENDED_TASK_IDS: list[int] = [
     # 3 small (n < 1000): diabetes, blood-transfusion, vehicle
     37, 10101, 54,
-    # 3 medium (1000 <= n < 10000): spambase, kr-vs-kp, car
-    44, 3, 21,
+    # 3 medium (1000 <= n < 10000): mfeat-fourier, kr-vs-kp, car
+    14, 3, 21, 
     # 3 large (n >= 10000): MagicTelescope, bank-marketing, letter
     3954, 14965, 6,
 ]
