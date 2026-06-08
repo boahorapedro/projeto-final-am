@@ -20,14 +20,23 @@ from src.pipeline.evaluate import fit_predict_evaluate
 from src.pipeline.split import stratified_split
 from src.pipeline.tune import tune 
 
-
+""" ANTERIOR
 def xrfm_search_space(trial):
-    """Espaço de busca do Optuna específico para o xRFM."""
+    'Espaço de busca do Optuna específico para o xRFM.'
     return {
         'iters': trial.suggest_int('iters', 2, 5),
         'bandwidth': trial.suggest_float('bandwidth', 1.0, 20.0, log=True),
         'exponent': trial.suggest_float('exponent', 0.5, 1.5),
         'reg': trial.suggest_float('reg', 1e-4, 1e-2, log=True)
+    }
+"""
+def xrfm_search_space(trial):
+    """Espaço de busca do Optuna específico para o xRFM."""
+    return {
+        'iters': trial.suggest_int('iters', 3, 7), # Aumenta esppaço do Optuna
+        'bandwidth': trial.suggest_float('bandwidth', 1.0, 20.0, log=True),
+        'exponent': trial.suggest_float('exponent', 0.5, 1.5),
+        'reg': trial.suggest_float('reg', 1e-4, 1e-2, log=True),
     }
 
 def parse_args() -> argparse.Namespace:
@@ -108,15 +117,25 @@ def main() -> None:
                 estimator = factory(args.seed)
 
             # Avaliação do modelo (sem o make_pipeline problemático)
-            metrics = fit_predict_evaluate(estimator, X_train, y_train, X_test, y_test)
+            # --- MODIFICAÇÃO PARA CAPTURAR TREINO E TESTE ---
             
-            row = {"task_id": task_id, "dataset": ds.name, "model": model_name}
-            row.update(metrics.to_dict())
-            rows.append(row)
+            # Avaliação padrão do Teste
+            metrics_test = fit_predict_evaluate(estimator, X_train, y_train, X_test, y_test)
+            
+            row_test = {"task_id": task_id, "dataset": ds.name, "model": model_name, "split": "test"}
+            row_test.update(metrics_test.to_dict())
+            rows.append(row_test)
+            
+            # Avaliação espelhada no Treino
+            metrics_train = fit_predict_evaluate(estimator, X_train, y_train, X_train, y_train)
+            
+            row_train = {"task_id": task_id, "dataset": ds.name, "model": model_name, "split": "train"}
+            row_train.update(metrics_train.to_dict())
+            rows.append(row_train)
             
             print(
-                f"[{ds.name}] {model_name}: AUC={metrics.auc_ovo:.4f}, "
-                f"ACC={metrics.accuracy:.4f}, time={metrics.fit_time_s + metrics.predict_time_s:.1f}s"
+                f"[{ds.name}] {model_name} (Teste): AUC={metrics_test.auc_ovo:.4f}, "
+                f"ACC={metrics_test.accuracy:.4f}, time={metrics_test.fit_time_s + metrics_test.predict_time_s:.1f}s"
             )
 
     pd.DataFrame(rows).to_csv(args.output, index=False)

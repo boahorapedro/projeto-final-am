@@ -23,7 +23,7 @@ def build_lightgbm(seed: int = 42) -> LGBM_TD_Classifier:
 
 def build_xgboost(seed: int = 42) -> XGB_TD_Classifier:
     """XGBoost com defaults meta-tunados (TD) do pytabkit."""
-    return XGB_TD_Classifier(random_state=seed)
+    return XGB_TD_Classifier(random_state=seed, device="cuda") # Alteração para GPU
 
 
 def build_catboost(seed: int = 42) -> CatBoost_TD_Classifier:
