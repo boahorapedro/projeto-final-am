@@ -1,140 +1,120 @@
-# Projeto Final de Aprendizagem de Máquina, Repositório-Template
+# Model Card: xRFM
 
-Estrutura de código de referência para a Etapa 2 do Projeto Final da disciplina de Aprendizagem de Máquina. O template padroniza:
+## 1. Detalhes do modelo
 
-1. Carregamento de 9 datasets do TabArena-v0.1 (3 small + 3 medium + 3 large).
-2. Implementação dos baselines (LightGBM, CatBoost, XGBoost) via `pytabkit`.
-3. Pipeline de split (70/30 com seed fixa), tuning com Optuna, avaliação das métricas exigidas.
-4. Análise descritiva: tabela média ± desvio por modelo, gráficos de barras e boxplot, análise por regime.
-5. Smoke test que valida os 3 baselines mais o pipeline de gráficos em um dataset pequeno.
+- **Nome:** xRFM
+- **Versão:** 0.4.5
+- **Autores originais:**  Beaglehole et al., 2026
+- **Repositório oficial:** https://github.com/dmbeaglehole/xRFM
+- **Licença do código:** MIT
+- **Família arquitetural:** Baseada em árvores e máquinas de kernel
+- **Contagem de parâmetros:** N/A
+- **Complexidade computacional:** $O(nlogn)$ em tempo de treinamento, e $O(logn)$
+- **Pico de memória observado:** 50% da capacidade da GPU durante o período de otimização do Optuna para o xRFM (dado extraído via nvidia-smi).
+- **Toolkit / dependências:** torch 1.8.x,
+    numpy 1.19.x,
+    scikit-learn 1.4.x,
+    tqdm 4.60.x
+- **Hiperparâmetros principais:** iters, lambda, gamma, max_leaf_size; a busca pelos melhores hiperparâmetros foi realizado por meio do Optuna via Otimização Bayesiana
 
-## Status do template
+## 2. Uso pretendido
 
-A tabela abaixo indica, para cada componente, o que já está implementado e validado e o que cabe a cada grupo preencher. As convenções são:
+- **Caso de uso primário:** classificação supervisionada em dados tabulares.
+- **Casos de uso fora de escopo:** N/A
+- **Usuários pretendidos:** Pesquisadores e profissionais de ciência de dados.
+- **Faixa de n suportada:** de $1.000$ amostras até $10.000$ amostras
+- **Faixa de p suportada:** de $6$ a $76$ features
+- **Condições operacionais:** Multithreading Nativo de CPU em uma AMD RX 5700X com 32GB de RAM para LightGBM e CatBoost, CUDA em uma RTX 3060Ti para xRFM e XGBoost. Ambiente Virtual configurado para Python 3.11.
 
-- **Pronto:** componente implementado e validado por smoke test; nada a fazer.
-- **Esqueleto:** há um arquivo funcional, porém genérico, que cada grupo deve adaptar ao seu modelo.
-- **Placeholder:** há apenas um stub; o grupo precisa implementar.
-- **Ação do aluno:** entrega que não está no template e o grupo deve produzir do zero.
+## 3. Fatores observados
 
-| Componente | Status | O que falta |
-|---|---|---|
-| `data/load_tabarena.py`, carregamento via OpenML | Pronto | Substituir `RECOMMENDED_TASK_IDS` (lista provisória de 9 IDs) pela lista oficial escolhida, validando com `summarize()`. |
-| `src/models/baselines.py` (LightGBM, XGBoost, CatBoost via pytabkit) | Pronto | Nada. |
-| `src/models/group_model.py` (modelo principal do grupo) | Placeholder | Implementar `build_group_model(seed)` retornando o estimador atribuído (ver exemplos comentados no próprio arquivo). |
-| `src/pipeline/split.py` (70/30 estratificado) | Pronto | Nada. |
-| `src/pipeline/tune.py` (Optuna, genérico) | Esqueleto | Cada grupo define o `search_space` apropriado para o seu modelo. Para baselines `pytabkit` com defaults TD, o tuning pode ser opcional. |
-| `src/pipeline/evaluate.py` (AUC OvO, ACC, G-Mean, CE, tempo) | Pronto | Nada. |
-| `src/pipeline/regime.py` (quebra por regime) | Pronto | Nada. |
-| `src/pipeline/run_all.py` (orquestrador CLI) | Pronto | Cada grupo passa `--include-group-model` após implementar `group_model.py`. |
-| `src/reports/results_table.py` (resumos e exportação Markdown) | Pronto | Nada. |
-| `src/reports/plots.py` (barras, boxplot, regime, time vs. quality) | Pronto | Nada. |
-| `notebooks/01_eda.ipynb` até `04_analise_resultados.ipynb` | Esqueleto | Executar e adaptar; usar para gerar figuras e tabelas do relatório. |
-| `model_cards/TEMPLATE.md` | Placeholder | Copiar para `model_cards/<seu-modelo>.md` e preencher as 10 seções (detalhes do modelo, uso pretendido, fatores, métricas com IC 95%, dados de avaliação, dados de treino e pré-treino, análise quantitativa, avisos e recomendações, considerações éticas, reprodutibilidade). |
-| `tests/test_pipeline.py` (smoke test) | Pronto | Nada. |
-| Tabela de seleção dos 9 datasets (no relatório) | Ação do aluno | Construir tabela com nome, task ID OpenML, n, n_features, n_classes e regime. |
-| Relatório final em PDF | Esqueleto | Estrutura sugerida em `entregaveis/relatorio-template.pdf`. Substituir placeholders e preencher conforme as exigências da disciplina. |
-| Slides da apresentação (10 minutos: 5 + 5) | Esqueleto | Estrutura sugerida em `entregaveis/slides-template.pdf` (cerca de 12 frames, dois blocos de 5 minutos). |
-| Rubrica de avaliação | Pronto | Disponível em `entregaveis/rubrica.pdf`. Vincula a nota a entregas concretas, decompondo o esquema 40 + 50 + 10 do PDF da disciplina em critérios com pesos específicos. |
+Dimensões em que o desempenho do modelo varia, avaliadas neste projeto sobre os 9 datasets do TabArena-v0.1:
 
-## Modelos atribuíveis aos grupos
+- **Tamanho do dataset (n):** Para regimes pequenos (< 1000 amostras) o modelo possui a menor AUC OvO, alcançando seu pico de desempenho em regimes médios (1.000 a 10.000 amostras), e diminuindo novamente em datasets grandes (> 10.000 amostras).
+- **Número de classes:** O modelo possuiu um melhor desempenho médio em regimes multiclasses do que em regimes binários.
+- **Proporção entre features categóricas e numéricas:** Em datasets que possuem maior proporção de features categóricas o modelo performou de forma ligeiramente superior. 
+- **Presença de valores ausentes:** O desempenho médio do modelo com valores ausentes é ligeiramente inferior ao seu desempenho quando o dataset não possui valores ausentes. 
 
-| # | Modelo | Toolkit |
-|---|---|---|
-| 1 | TabPFN-2.5 | `tabpfn` |
-| 2 | TabICL v2 | `tabicl` |
-| 3 | TabM | `pytabkit` |
-| 4 | ModernNCA | `LAMDA-Tabular/TALENT` |
-| 5 | RealMLP | `pytabkit` |
-| 6 | xRFM | `xrfm` |
-| 7 | Mambular | `deeptab` |
-| 8 | FT-Transformer | `pytabkit` ou `deeptab` |
-| 9 | EBM | `interpret` |
-| 10 | Trompt | `pytorch-frame` |
+## 4. Métricas alcançadas
 
-## Quickstart
+Tabela agregada nos 9 datasets do TabArena. Reportar média, desvio padrão e intervalo de confiança de 95% via bootstrap (1.000 reamostragens).
 
-Pré-requisitos: Python 3.11 ou superior e [`uv`](https://docs.astral.sh/uv/) (recomendado) ou `pip`.
+| Métrica | Média | Desvio | IC 95% (bootstrap) |
+|---|---|---|---|
+| AUC OvO | $0,904$ | $0,108$ | <[0,0000; 0,0000]> |
+| Accuracy | $0,869$  | $0,099$  | <[0,0000; 0,0000]> |
+| G-Mean | $0,741$  | $0,237$  | <[0,0000; 0,0000]> |
+| Cross-Entropy | $0,368$  | $0,214$  | <[0,0000; 0,0000]> |
+| Tempo total (s) | $9,267$  | $19,259$  | <[0,0; 0,0]> |
 
-```bash
-# clonar o repositório
-git clone <url-do-template>
-cd projeto-final-AM-grad
+### Resultados por regime
 
-# opção A: uv (recomendado)
-uv sync
+- **Tamanho:** pequeno: AUC=$0,792$ ; médio: AUC=$0,992$; grande: AUC=$0,928$
+- **Número de classes:** binário: AUC=$0,897$; multiclasse: AUC $\approx 1.000$
+- **Proporção categórica:** baixa: AUC=$0,880$; alta: AUC=$0,939$
+- **Missing values:** com NaN: AUC=$0,97$; sem NaN: AUC=$0,878$ 
 
-# opção B: pip
-pip install -e .
+## 5. Dados de avaliação
 
-# rodar o smoke test (verifica que cada baseline e os gráficos executam)
-pytest tests/test_pipeline.py -v
-```
+- **Origem:** 9 datasets do TabArena-v0.1 (NeurIPS 2025), via OpenML.
+- **Distribuição por regime:** 3 pequenos + 3 médios + 3 grandes.
+- **Estratégia de split:** 70/30 estratificado por classe, seed=42.
+- **Pré-processamento aplicado:** A estrategia de imputação utilizada foi baseada na estratégia de imputação da estrutura de dados do Pandas. Os valores númericos ausentes foram tratados por meio do cálculo da mediana no conjunto de treinamento (assumido 0.0 quando em indeterminação matemática)., mantendo as variáveis categóricas estritamente preservadas. A codificação das variáveis categóricas e isolamento de escala foram delegados às fábricas de construção de modelos, com a função de construção do modelo convertendo variáveis categóricas em numéricas, e a escala sendo gerenciada pelas estruturas do pytabkit. 
+- **Lista dos datasets utilizados:** 
 
-Para rodar o experimento completo com o seu modelo atribuído:
+| Nome | Task ID | Amostras | Features | Classes | Regime |
+|---|---|---|---| --- | --- |
+|hepatitis|$54$|$155$|$19$| $2$ | pequeno |
+|blood-transfusion-service-center|10101|$748$|$4$| $2$ | pequeno |
+|diabetes|$37$|$768$|$8$| $2$ | pequeno |
+|car|$21$|$1728$|$6$| $4$ | médio |
+|mfeat-fourier|$14$|$2000$|$76$| $10$ |médio |
+|kr-vs-kp|$3$|$3196$|$36$| $2$ | médio |
+|MagicTelescope|$3954$|$19020$|$11$| $2$ | grande |
+|letter|$6$|$20000$|$16$| $26$ | grande |
+|bank-marketing|$14965$|$45211$|$16$| $2$ | grande |
 
-```bash
-# editar src/models/group_model.py para apontar para o modelo do grupo
-# rodar o pipeline em todos os 9 datasets:
-python -m src.pipeline.run_all --include-group-model --seed 42
-```
 
-## Estrutura
+## 6. Dados de treino e pré-treino
 
-```
-projeto-final-AM-grad/
-|- README.md
-|- pyproject.toml
-|- Dockerfile
-|- .python-version
-|- data/
-|   |- load_tabarena.py
-|- src/
-|   |- models/
-|   |   |- baselines.py
-|   |   |- group_model.py
-|   |- pipeline/
-|       |- split.py
-|       |- tune.py
-|       |- evaluate.py
-|       |- regime.py
-|       |- run_all.py
-|   |- reports/
-|       |- results_table.py
-|       |- plots.py
-|- notebooks/
-|   |- 01_eda.ipynb
-|   |- 02_demo_baselines.ipynb
-|   |- 03_demo_modelo_grupo.ipynb
-|   |- 04_analise_resultados.ipynb
-|- model_cards/
-|   |- TEMPLATE.md
-|- docs/
-|   |- INFRAESTRUTURA.md
-|- tests/
-    |- test_pipeline.py
-```
+- **Modelo é foundation model pré-treinado, treinado do zero ou híbrido?** Treinado do zero
+- **Origem dos dados de pré-treino (se aplicável):** N/A
+- **Origem dos dados de treino direto (se aplicável):** Treino direto nos dados de split.
+- **Possíveis vieses herdados do pré-treino:** N/A
 
-## Fluxo de trabalho recomendado
+## 7. Análise quantitativa
 
-1. **EDA inicial:** rodar `notebooks/01_eda.ipynb` para inspecionar os 9 datasets.
-2. **Baselines:** rodar `notebooks/02_demo_baselines.ipynb` para confirmar que LightGBM, CatBoost e XGBoost executam end-to-end.
-3. **Modelo do grupo:** implementar o wrapper em `src/models/group_model.py` e validar em `notebooks/03_demo_modelo_grupo.ipynb`.
-4. **Experimento completo:** rodar `python -m src.pipeline.run_all --include-group-model --seed 42`.
-5. **Análise descritiva e por regime:** abrir `notebooks/04_analise_resultados.ipynb` e gerar tabela, barras, boxplot e gráficos por regime.
-6. **Model card:** copiar `model_cards/TEMPLATE.md` para `model_cards/<nome-do-modelo>.md` e preencher.
+- **Posição no ranking médio entre os 4 sistemas avaliados** (modelo do grupo + 3 baselines): 3 de 4
+- **Comparação com baselines (LightGBM, CatBoost, XGBoost):** O delta entre o AUC OvO médio (em testes) em relação a cada regime foi: XGBoost=-0.02; CatBoost=-0.018; LightGBM=0.02. Assim, o delta médio de AUC OvO foi de -0.06, sendo inferior aos baselines em todos os datasets observados. 
+- **Custo vs. desempenho:** Possui um custo total médio de 9,267s, sendo o segundo pior modelo em quesito de tempo total de inferência no conjunto de teste. Isso se dá pela natureza dessa arquitetura, que  escala de forma muito expressiva com o tamanho do dataset (o maior dataset possui um tempo de execução de 58s, enquanto o menor possui um tempo de 0,016s). 
+- **Quebra por regime:** No regime de valores ausentes, o modelo se mostrou competitivo em cenários sem valores ausentes, e estável quando há valores ausentes; podemos associar isso ao kernel do RFM, que trata todos os pontos como vetores no espaço de distância. No regime de tamanho de dataset, o modelo se mostrou sobreajustado, possuindo um gargalo em poucas amostras por sobreajuste, e um gargalo em tempo para muitas amostras por conta das operações com matrizes custosas nas folhas. No regime de proporção categórica, o modelo do grupo se manteve competitivo, mas não ficou conclusivo se o motivo foi por conta do da escolha dos datasets. Por último, no regime de tipo de classificação, o modelo foi muito competitivo em modelos multiclasse, com estrutura de decisão separável no espaço de features, mas em classificações binárias teve uma alta variabilidade, principalmente pelo sobreajustamento do modelo
 
-## Reprodutibilidade
+## 8. Avisos e recomendações
 
-1. Seed fixa em todas as etapas (`split`, `tune`, `evaluate`).
-2. Versões fixadas no `pyproject.toml`.
-3. Dockerfile opcional disponível para containerização.
-4. Saídas intermediárias (resultados por dataset por modelo) são gravadas em CSV em `results/`.
+- **Quando usar este modelo:** Em regimes com um número de amostras entre $1.000$ a $10.000$ amostras com mais de 10 features, onde o modelo terá um desempenho alto com grande rapidez em treino e em teste. 
+- **Quando NÃO usar este modelo:** Em regimes com poucas features, ou com muitas amostras (> $10.000$), pois correm o risco de se sobreajustar ou de demorar muito tempo nas folhas, respectivamente.
+- **Alternativas recomendadas em cada caso:** Em datasets grandes, utilizar o CatBoost. Em datasets pequenos, utilizar o LightGBM
 
-## Licenças
+## 9. Considerações éticas
 
-Todas as bibliotecas utilizadas têm licenças permissivas (MIT, Apache 2.0). A única exceção é o modelo TabPFN-2.5, cujos pesos são distribuídos sob licença não-comercial; o uso acadêmico em sala está explicitamente autorizado.
+- **Riscos de uso indevido:** Quando usado em situação indevida, pode ter um desempenho muito baixo, favorecer a classe majoritária utilizada em treino, ou demandar um alto custo computacional.
+- **Fairness por classe:** Em cenários de classificação binária desbalanceada, o modelo tende a sobreajustar para a classe majoritária, de forma que o uso nesse tipo de situação não é aconselhável.
+- **Impacto ambiental:** Em datasets pequenos e médios, a latência de inferência é baixa ou competitiva em relação a outros modelos, não sendo um problema ambiental em gasto energético. Em datasets grandes, contudo, o grande tempo de inferência pelas operações matemáticas complexas envolvidas pode ser um sério problema, se o modelo for usado nesse tipo de contexto.
+- **Recomendações de auditoria:** Os AGOPs das folhas podem ser usados para descobrir as features de maior importância para a classificação, adicionando uma explicabilidade maior ao modelo que pode ser importante em situações de auditoria
 
-## Suporte
+## 10. Reprodutibilidade
 
-Em caso de dúvida técnica, consulte primeiro `docs/INFRAESTRUTURA.md`. Se a dúvida persistir, abrir issue no repositório do template ou contatar o professor da disciplina.
+- **Ambiente:** Python <3.11>, dependências fixadas em `pyproject.toml`.
+- **Hardware utilizado:** <CPU, RAM, tempo total de execução>
+- **Comandos para reproduzir:**
+  ```bash
+  uv sync
+  python -m src.pipeline.run_all --include-group-model --seed 42
+  ```
+- **Hash do commit:** 93b636cb43064b214bee723aa0f9ee9b96081695 [https://github.com/boahorapedro/projeto-final-am/commit/93b636cb43064b214bee723aa0f9ee9b96081695]
+
+## Referências
+
+- Beaglehole, D. et al. (2025). Recursive Feature Machine (xRFM). Repositório oficial: https://github.com/dmbeaglehole/xRFM
+- Mitchell, M. et al. (2019). Model Cards for Model Reporting. FAT*.
+- TabArena-v0.1 (NeurIPS 2025): https://tabarena.ai
