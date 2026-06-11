@@ -1,58 +1,125 @@
-"""Placeholder do modelo principal do grupo.
+import torch
+import numpy as np
+import pandas as pd
+from sklearn.base import BaseEstimator, ClassifierMixin
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder, OneHotEncoder
+from xrfm import xRFM
 
-Cada grupo deve substituir `build_group_model` pelo wrapper sklearn-compatível
-do modelo atribuído. A lista de modelos atribuíveis está descrita no README.
+class XRFMClassifierWrapper(BaseEstimator, ClassifierMixin):
+    _estimator_type = "classifier"
 
-Padrão esperado: a função retorna um estimador com .fit(X, y) e .predict_proba(X).
-Se o modelo não tem API sklearn, envolva em sklearn.base.BaseEstimator.
-"""
+    def __init__(self, iters=3, bandwidth=10.0, exponent=1.0, reg=1e-3, random_state=42):
+        self.iters = int(iters)
+        self.bandwidth = float(bandwidth)
+        self.exponent = float(exponent)
+        self.reg = float(reg)
+        self.random_state = random_state
+        self.model = None
+        self.le_ = LabelEncoder()
+        self.ohe_ = OneHotEncoder(sparse_output=False)
+        self.classes_ = None
 
-from __future__ import annotations
+    def _preprocess_X(self, X):
+        if isinstance(X, pd.DataFrame):
+            X = X.copy()
+            for col in X.select_dtypes(include=['object', 'category']).columns:
+                X[col] = X[col].astype('category').cat.codes
+            return X.fillna(0).values.astype(np.float32)
+        return np.nan_to_num(X).astype(np.float32)
 
+    def _to_numpy(self, data):
+        """Converte de forma segura o retorno do xRFM para NumPy array, tratando tensores ou ndarrays."""
+        if hasattr(data, 'cpu'):
+            return data.cpu().numpy()
+        if hasattr(data, 'detach'):
+            return data.detach().numpy()
+        return np.asarray(data)
 
-def build_group_model(seed: int = 42):
-    """Substitua o corpo desta função pelo modelo do seu grupo.
+    def fit(self, X, y):
+        y_encoded = self.le_.fit_transform(y)
+        self.classes_ = self.le_.classes_
 
-    Exemplos (descomente o que se aplicar ao seu grupo):
+        # Transforma o alvo para o formato multi-coluna binário aceito pela matemática interna
+        y_ohe = self.ohe_.fit_transform(y_encoded.reshape(-1, 1)).astype(np.float32)
+        X_num = self._preprocess_X(X)
 
-    # 1) TabPFN-2.5
-    # from tabpfn import TabPFNClassifier
-    # return TabPFNClassifier(random_state=seed, device='auto')
+        X_train, X_val, y_train_ohe, y_val_ohe = train_test_split(
+            X_num, y_ohe, test_size=0.2, random_state=self.random_state, stratify=y_encoded
+        )
 
-    # 2) TabICL v2
-    # from tabicl import TabICLClassifier
-    # return TabICLClassifier(random_state=seed)
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        
+        X_train_t = torch.tensor(X_train, device=device)
+        y_train_t = torch.tensor(y_train_ohe, device=device)
+        X_val_t = torch.tensor(X_val, device=device)
+        y_val_t = torch.tensor(y_val_ohe, device=device)
 
-    # 3) TabM (via pytabkit)
-    # from pytabkit import TabM_Classifier
-    # return TabM_Classifier(random_state=seed, n_jobs=-1)
+        rfm_params = {
+            'model': {
+                'kernel': 'l1_kermac',
+                'bandwidth': self.bandwidth,
+                'exponent': self.exponent,
+                'diag': False,
+                'bandwidth_mode': 'constant',
+            },
+            'fit': {
+                'reg': self.reg,
+                'iters': self.iters,
+                'verbose': False,
+                'early_stop_rfm': True,
+            }
+        }
 
-    # 4) ModernNCA (via TALENT toolkit)
-    # consultar https://github.com/LAMDA-Tabular/TALENT para wrapper
+        self.model = xRFM(
+            rfm_params=rfm_params,
+            device=device,
+            tuning_metric='auc' 
+        )
 
-    # 5) RealMLP
-    # from pytabkit import RealMLP_TD_S_Classifier
-    # return RealMLP_TD_S_Classifier(random_state=seed)
+        self.model.fit(X_train_t, y_train_t, X_val_t, y_val_t)
+        return self
 
-    # 6) xRFM
-    # from xrfm import xRFMClassifier
-    # return xRFMClassifier(random_state=seed)
+    def predict_proba(self, X):
+        X_num = self._preprocess_X(X)
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        X_t = torch.tensor(X_num, device=device)
+        
+        # Coleta os valores brutos da predição usando a função auxiliar segura
+        try:
+            raw_data = self.model.predict_proba(X_t)
+        except AttributeError:
+            raw_data = self.model.predict(X_t)
+            
+        probas = self._to_numpy(raw_data)
+        
+        # Filtros e ajustes para estabilidade das métricas no Optuna
+        probas = np.nan_to_num(probas, nan=0.0, posinf=1.0, neginf=0.0)
+        probas = np.clip(probas, 1e-7, 1.0)
+        
+        row_sums = probas.sum(axis=1, keepdims=True)
+        probas = probas / row_sums
 
-    # 7) Mambular
-    # from deeptab import MambularClassifier
-    # return MambularClassifier(random_state=seed)
+        if len(self.classes_) == 2 and probas.shape[1] == 1:
+            probas_2d = np.zeros((probas.shape[0], 2))
+            probas_2d[:, 1] = probas[:, 0]
+            probas_2d[:, 0] = 1.0 - probas[:, 0]
+            return probas_2d
+            
+        return probas
 
-    # 8) FT-Transformer
-    # from pytabkit import FTT_TD_Classifier
-    # return FTT_TD_Classifier(random_state=seed)
+    def predict(self, X):
+        probas = self.predict_proba(X)
+        preds_num = np.argmax(probas, axis=1)
+        return self.le_.inverse_transform(preds_num)
 
-    # 9) EBM
-    # from interpret.glassbox import ExplainableBoostingClassifier
-    # return ExplainableBoostingClassifier(random_state=seed)
+    def __sklearn_tags__(self):
+        tags = super().__sklearn_tags__()
+        tags.estimator_type = "classifier"
+        return tags
 
-    # 10) Trompt (via pytorch-frame)
-    # consultar https://github.com/pyg-team/pytorch-frame/blob/master/examples/trompt.py
-
-    raise NotImplementedError(
-        "Implemente o modelo do seu grupo em src/models/group_model.py"
-    )
+def build_group_model(seed: int = 42, params: dict = None):
+    if params is None:
+        params = {}
+    params['random_state'] = seed
+    return XRFMClassifierWrapper(**params)
